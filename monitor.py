@@ -111,7 +111,7 @@ class GraphiteWriter(object):
                 except socket.error as e:
                     sys.stderr.write("Communications error: %s\n" % e)
                     healthy = False
-                    conn.shutdown()
+                    conn.shutdown(socket.SHUT_RDWR)
                     conn.close()
                 time.sleep(1)
     
