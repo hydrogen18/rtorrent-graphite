@@ -6,6 +6,7 @@ import xmlrpclib
 import sys
 import time
 import json
+import itertools
 
 
 class Monitor(object):
@@ -19,7 +20,60 @@ class Monitor(object):
         rtorrent = xmlrpclib.ServerProxy(self.url)
         while True:
             dl = rtorrent.get_down_rate('')
-            self.write_metric('download-rate',dl)
+            self.write_metric('transfer.download-rate',dl)
+            
+            ul = rtorrent.get_up_rate('')
+            self.write_metric('transfer.upload-rate',ul)
+            
+            memory = rtorrent.get_memory_usage('')
+            self.write_metric('memory.usage',memory)
+            
+            max_memory = rtorrent.get_max_memory_usage('')
+            self.write_metric('memory.max',max_memory)
+            
+            download_list = rtorrent.download_list('')
+            
+            mc = xmlrpclib.MultiCall(rtorrent)
+            for dl in download_list:
+                mc.__getattr__('d.get_complete')(dl)
+                
+            for dl in download_list:        
+                mc.__getattr__('d.get_left_bytes')(dl)
+                
+            for dl in download_list:
+                mc.__getattr__('d.get_bytes_done')(dl)
+                
+            result = mc()
+            #Wrap so that subsequent use of itertools
+            #doesn't start over from the beginning
+            result = (r for r in result)
+
+            complete = 0
+            incomplete = 0
+            
+            bytes_remaining = 0
+            bytes_downloaded = 0
+            
+            dummy = range(len(download_list))
+            
+            for _, isComplete in itertools.izip(dummy,result):
+                complete += isComplete
+            
+            for _, bytes_left in itertools.izip(dummy,result):
+                bytes_remaining += bytes_left
+                
+            for _, bytes_done in itertools.izip(dummy,result):
+                bytes_downloaded += bytes_done
+                
+            incomplete = len(download_list) - complete
+            
+            self.write_metric('torrents.complete',complete)
+            self.write_metric('torrents.incomplete',incomplete)
+            self.write_metric('torrents.bytes-done',bytes_downloaded)
+            self.write_metric('torrents.bytes-remaining',bytes_remaining)
+                    
+                
+            
             time.sleep(self.interval)
             
     def write_metric(self,metric_name,metric_value):
